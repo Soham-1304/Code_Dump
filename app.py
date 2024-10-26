@@ -1,318 +1,105 @@
-from flask import Flask, render_template, request, jsonify
-from datetime import datetime
+import streamlit as st
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_community.llms import Ollama
 
-app = Flask(__name__)
+# Prompt Template
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", "You are a financial advisor that understands the user's financial condition, then suggests investment options accordingly to reach their long-term and short-term financial goals. "
+         "Take into account the choice of time duration and the goal. Now specifically give the answers in pointers tailored towards their preferences and viability"
+         "Give the investment option name also .In Indian Rupee Only"),
+        ("user", "Question:[Age:{age}, Employment Status:{employment_status}, Invest/Month:{invest}, Goal:{primary_goal}, Term:{time_horizon}, Risk Level:{risk_level}, Target Amount:{target_amount}]")
+    ]
+)
 
-# Simulated user database
-users = {}
+# Streamlit framework
+st.title('FutureFunds')
 
-def generate_recommendation(user_data):
-    age = user_data['age']
-    income = user_data['income']
-    savings = user_data['savings']
-    risk_tolerance = user_data['risk_tolerance']
-    short_term_goal = user_data['short_term_goal']
-    long_term_goal = user_data['long_term_goal']
+# Collecting User Inputs
+input_age = st.number_input("Enter your age", 0, 100)
+input_employment_status = st.selectbox("Choose your Employment Status", ['Select From Below', 'Employed', 'Unemployed', 'Freelancer', 'Student'])
 
-    recommendation = {
-        'stocks': 0,
-        'mutual_funds': 0,
-        'fd': 0,
-        'gold': 0,
-        'crypto': 0,
-        'ppf': 0,
-        'nps': 0,
-        'scss': 0,
-        'policies': 0
-    }
+# Savings Input
+input_invest = st.number_input("Enter the amount you are willing to invest every month", min_value=0.0, format="%.2f")
 
-    # Basic allocation based on risk tolerance
-    if risk_tolerance == 'low':
-        recommendation['fd'] = 30
-        recommendation['ppf'] = 20
-        recommendation['gold'] = 10
-        recommendation['mutual_funds'] = 20
-        recommendation['stocks'] = 10
-        recommendation['nps'] = 10
-    elif risk_tolerance == 'medium':
-        recommendation['stocks'] = 30
-        recommendation['mutual_funds'] = 30
-        recommendation['fd'] = 15
-        recommendation['ppf'] = 10
-        recommendation['gold'] = 5
-        recommendation['crypto'] = 5
-        recommendation['nps'] = 5
-    else:  # high risk tolerance
-        recommendation['stocks'] = 40
-        recommendation['mutual_funds'] = 25
-        recommendation['crypto'] = 15
-        recommendation['gold'] = 5
-        recommendation['fd'] = 5
-        recommendation['ppf'] = 5
-        recommendation['nps'] = 5
+# Choosing the approach: Investment or Debt Clearance
+input_approach = st.selectbox("Select Investment / Debt Clearance", ('Investment', 'Debt Clearance'))
 
-    # Age-specific adjustments
-    if age > 50:
-        recommendation['scss'] = 10
-        recommendation['stocks'] = max(0, recommendation['stocks'] - 10)
-    elif 30 <= age <= 40:
-        recommendation['ppf'] += 5
-        recommendation['mutual_funds'] = max(0, recommendation['mutual_funds'] - 5)
+if input_approach == 'Investment':
+    input_primarygoal = st.selectbox("What is your primary investment goal?", ('Wealth Accumulation', 'Retirement Planning', 'Education Funding'))
 
-    # Goal-specific adjustments
-    if short_term_goal == 'emergency_fund':
-        recommendation['fd'] += 10
-        recommendation['stocks'] = max(0, recommendation['stocks'] - 10)
-    elif short_term_goal == 'vacation':
-        recommendation['mutual_funds'] += 5
-        recommendation['fd'] += 5
-        recommendation['stocks'] = max(0, recommendation['stocks'] - 10)
+    # Additional inputs related to investment
+    input_time_horizon = st.number_input("Enter the time horizon (in years) for this goal", min_value=1, max_value=50, step=1)
+    input_risk_level = st.selectbox("What is your risk tolerance?", ['Low', 'Moderate', 'High'])
+    input_target_amount = st.number_input("Enter your target amount for this investment goal", min_value=0.0, format="%.2f")
 
-    if long_term_goal == 'retirement':
-        recommendation['nps'] += 10
-        recommendation['mutual_funds'] = max(0, recommendation['mutual_funds'] - 10)
-    elif long_term_goal == 'children_education':
-        recommendation['ppf'] += 10
-        recommendation['mutual_funds'] += 5
-        recommendation['stocks'] = max(0, recommendation['stocks'] - 15)
+elif input_approach == 'Debt Clearance':
+    # Debt-related inputs
+    input_debttype = st.selectbox("What type of debt do you have?", ('Credit Card', 'Student Loan', 'Mortgage'))
+    input_debtbalance = st.number_input('Enter the outstanding balance of the debt:')
+    input_debtpay = st.number_input('What is the monthly payment for the debt')
+    input_debtstrat = st.selectbox("Choose a debt repayment strategy", ('Debt Avalanche', 'Debt Snowball', 'Debt Consolidation', 'Debt Snowflake'))
+    input_dependant = st.text_input("Do you have any dependents or responsibilities?")
 
-    # Ensure policies are included
-    recommendation['policies'] = 5
-    recommendation['stocks'] = max(0, recommendation['stocks'] - 5)
+# Debugging Outputs
+st.write("Debugging Info:")
+st.write("Age:", input_age)
+st.write("Employment Status:", input_employment_status)
+st.write("Investible Amount:", input_invest)
 
-    return recommendation
+if input_approach == 'Investment':
+    st.write("Primary Goal:", input_primarygoal)
+    st.write("Time Horizon:", input_time_horizon)
+    st.write("Risk Level:", input_risk_level)
+    st.write("Target Amount:", input_target_amount)
+elif input_approach == 'Debt Clearance':
+    st.write("Debt Type:", input_debttype)
+    st.write("Debt Balance:", input_debtbalance)
+    st.write("Monthly Payment:", input_debtpay)
+    st.write("Repayment Strategy:", input_debtstrat)
+    st.write("Dependants:", input_dependant)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+# Button for invoking the chain
+clicked = st.button('Get Response')
 
-@app.route('/submit', methods=['POST'])
-def submit():
-    user_data = {
-        'age': int(request.form['age']),
-        'income': int(request.form['income']),
-        'savings': int(request.form['savings']),
-        'risk_tolerance': request.form['risk_tolerance'],
-        'short_term_goal': request.form['short_term_goal'],
-        'long_term_goal': request.form['long_term_goal']
-    }
-    
-    recommendation = generate_recommendation(user_data)
-    
-    user_id = len(users) + 1
-    users[user_id] = {
-        'data': user_data,
-        'recommendation': recommendation,
-        'created_at': datetime.now()
-    }
-    
-    return jsonify({'user_id': user_id, 'recommendation': recommendation})
+# LLM interaction - Chain invocation
+llm = Ollama(model="llama3.2")
+output_parser = StrOutputParser()
 
-@app.route('/adjust', methods=['POST'])
-def adjust():
-    user_id = int(request.form['user_id'])
-    field = request.form['field']
-    value = request.form['value']
-    
-    if user_id in users:
-        users[user_id]['data'][field] = value
-        new_recommendation = generate_recommendation(users[user_id]['data'])
-        users[user_id]['recommendation'] = new_recommendation
-        return jsonify({'success': True, 'recommendation': new_recommendation})
-    else:
-        return jsonify({'success': False, 'error': 'User not found'})
+# Chain invocation based on inputs
+if clicked:
+    if input_approach == 'Investment':
+        # Ensure all required keys are present
+        response = prompt | llm | output_parser
+        try:
+            result = response.invoke({
+                'age': input_age,
+                'employment_status': input_employment_status,
+                'invest': input_invest,
+                'primary_goal': input_primarygoal,
+                'time_horizon': input_time_horizon,
+                'risk_level': input_risk_level,
+                'target_amount': input_target_amount
+            })
+            st.write(result)
+        except KeyError as e:
+            st.error(f"Key error: {e}")
 
-@app.route('/track_progress', methods=['POST'])
-def track_progress():
-    user_id = int(request.form['user_id'])
-    goal = request.form['goal']
-    progress = float(request.form['progress'])
-    
-    if user_id in users:
-        if 'progress' not in users[user_id]:
-            users[user_id]['progress'] = {}
-        users[user_id]['progress'][goal] = progress
-        return jsonify({'success': True})
-    else:
-        return jsonify({'success': False, 'error': 'User not found'})
-
-if __name__ == '__main__':
-    app.run(debug=True)
-
-# HTML template (index.html) - place this in a 'templates' folder
-"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Financial Advisor</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; }
-        .container { max-width: 800px; margin: auto; }
-        form { margin-bottom: 20px; }
-        label { display: block; margin-top: 10px; }
-        input, select { width: 100%; padding: 8px; margin-top: 5px; }
-        button { background-color: #4CAF50; color: white; padding: 10px 15px; border: none; cursor: pointer; margin-top: 10px; }
-        #recommendation, #progressTracker { margin-top: 20px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>AI Financial Advisor</h1>
-        <form id="financialForm">
-            <label for="age">Age:</label>
-            <input type="number" id="age" name="age" required>
-            
-            <label for="income">Annual Income:</label>
-            <input type="number" id="income" name="income" required>
-            
-            <label for="savings">Current Savings:</label>
-            <input type="number" id="savings" name="savings" required>
-            
-            <label for="risk_tolerance">Risk Tolerance:</label>
-            <select id="risk_tolerance" name="risk_tolerance" required>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-            </select>
-            
-            <label for="short_term_goal">Short-term Goal:</label>
-            <select id="short_term_goal" name="short_term_goal" required>
-                <option value="emergency_fund">Build Emergency Fund</option>
-                <option value="vacation">Save for Vacation</option>
-                <option value="new_car">Buy a New Car</option>
-            </select>
-            
-            <label for="long_term_goal">Long-term Goal:</label>
-            <select id="long_term_goal" name="long_term_goal" required>
-                <option value="retirement">Retirement</option>
-                <option value="buy_house">Buy a House</option>
-                <option value="children_education">Children's Education</option>
-            </select>
-            
-            <button type="submit">Get Recommendation</button>
-        </form>
-        
-        <div id="recommendation" style="display: none;">
-            <h2>Your Personalized Investment Recommendation</h2>
-            <canvas id="recommendationChart"></canvas>
-        </div>
-        
-        <div id="adjustments" style="display: none;">
-            <h2>Adjust Your Information</h2>
-            <form id="adjustForm">
-                <label for="adjust_field">Field to Adjust:</label>
-                <select id="adjust_field" name="adjust_field" required>
-                    <option value="age">Age</option>
-                    <option value="income">Income</option>
-                    <option value="savings">Savings</option>
-                    <option value="risk_tolerance">Risk Tolerance</option>
-                    <option value="short_term_goal">Short-term Goal</option>
-                    <option value="long_term_goal">Long-term Goal</option>
-                </select>
-                
-                <label for="adjust_value">New Value:</label>
-                <input type="text" id="adjust_value" name="adjust_value" required>
-                
-                <button type="submit">Adjust</button>
-            </form>
-        </div>
-        
-        <div id="progressTracker" style="display: none;">
-            <h2>Track Your Progress</h2>
-            <form id="progressForm">
-                <label for="goal">Goal:</label>
-                <select id="goal" name="goal" required>
-                    <option value="short_term">Short-term Goal</option>
-                    <option value="long_term">Long-term Goal</option>
-                </select>
-                
-                <label for="progress">Progress (%):</label>
-                <input type="number" id="progress" name="progress" min="0" max="100" required>
-                
-                <button type="submit">Update Progress</button>
-            </form>
-        </div>
-    </div>
-
-    <script>
-        let userId;
-        let recommendationChart;
-
-        document.getElementById('financialForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const response = await fetch('/submit', { method: 'POST', body: formData });
-            const data = await response.json();
-            userId = data.user_id;
-            displayRecommendation(data.recommendation);
-        });
-
-        document.getElementById('adjustForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            formData.append('user_id', userId);
-            const response = await fetch('/adjust', { method: 'POST', body: formData });
-            const data = await response.json();
-            if (data.success) {
-                displayRecommendation(data.recommendation);
-            } else {
-                alert('Error: ' + data.error);
-            }
-        });
-
-        document.getElementById('progressForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            formData.append('user_id', userId);
-            const response = await fetch('/track_progress', { method: 'POST', body: formData });
-            const data = await response.json();
-            if (data.success) {
-                alert('Progress updated successfully!');
-            } else {
-                alert('Error: ' + data.error);
-            }
-        });
-
-        function displayRecommendation(recommendation) {
-            document.getElementById('recommendation').style.display = 'block';
-            document.getElementById('adjustments').style.display = 'block';
-            document.getElementById('progressTracker').style.display = 'block';
-
-            const ctx = document.getElementById('recommendationChart').getContext('2d');
-            
-            if (recommendationChart) {
-                recommendationChart.destroy();
-            }
-
-            recommendationChart = new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: Object.keys(recommendation),
-                    datasets: [{
-                        data: Object.values(recommendation),
-                        backgroundColor: [
-                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-                            '#FF9F40', '#FF6384', '#C9CBCF', '#7BC225'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    title: {
-                        display: true,
-                        text: 'Investment Allocation'
-                    }
-                }
-            });
-        }
-    </script>
-</body>
-</html>
-"""
-
-print("AI Financial Advisor Flask application is ready to run!")
-print("Make sure to create a 'templates' folder and place the HTML content in 'index.html' within that folder.")
-print("Run this script and navigate to http://localhost:5000 in your web browser to use the application.")
+    elif input_approach == 'Debt Clearance':
+        # Ensure all required keys are present
+        response = prompt | llm | output_parser
+        try:
+            result = response.invoke({
+                'age': input_age,
+                'employment_status': input_employment_status,
+                'invest': input_invest,
+                'debttype': input_debttype,
+                'debtbalance': input_debtbalance,
+                'debtpay': input_debtpay,
+                'debtstrat': input_debtstrat,
+                'dependants': input_dependant
+            })
+            st.write(result)
+        except KeyError as e:
+            st.error(f"Key error: {e}")
